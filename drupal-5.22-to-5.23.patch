@@ -1,0 +1,530 @@
+diff -Naur drupal-5.22/CHANGELOG.txt drupal-5.23/CHANGELOG.txt
+--- drupal-5.22/CHANGELOG.txt	2010-03-04 01:16:02.000000000 +0100
++++ drupal-5.23/CHANGELOG.txt	2010-08-11 22:37:49.000000000 +0200
+@@ -1,4 +1,9 @@
+-// $Id: CHANGELOG.txt,v 1.173.2.48 2010/03/04 00:16:02 drumm Exp $
++// $Id: CHANGELOG.txt,v 1.173.2.50 2010/08/11 20:37:49 drumm Exp $
++
++Drupal 5.23, 2010-08-11
++-----------------------
++- Fixed security issues (File download access bypass, Comment unpublishing
++  bypass), see SA-CORE-2010-002.
+ 
+ Drupal 5.22, 2010-03-03
+ -----------------------
+diff -Naur drupal-5.22/modules/aggregator/aggregator.info drupal-5.23/modules/aggregator/aggregator.info
+--- drupal-5.22/modules/aggregator/aggregator.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/aggregator/aggregator.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/block/block.info drupal-5.23/modules/block/block.info
+--- drupal-5.22/modules/block/block.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/block/block.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/blog/blog.info drupal-5.23/modules/blog/blog.info
+--- drupal-5.22/modules/blog/blog.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/blog/blog.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/blogapi/blogapi.info drupal-5.23/modules/blogapi/blogapi.info
+--- drupal-5.22/modules/blogapi/blogapi.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/blogapi/blogapi.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/book/book.info drupal-5.23/modules/book/book.info
+--- drupal-5.22/modules/book/book.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/book/book.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/color/color.info drupal-5.23/modules/color/color.info
+--- drupal-5.22/modules/color/color.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/color/color.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/comment/comment.info drupal-5.23/modules/comment/comment.info
+--- drupal-5.22/modules/comment/comment.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/comment/comment.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/comment/comment.module drupal-5.23/modules/comment/comment.module
+--- drupal-5.22/modules/comment/comment.module	2009-04-29 20:32:15.000000000 +0200
++++ drupal-5.23/modules/comment/comment.module	2010-08-11 22:37:49.000000000 +0200
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: comment.module,v 1.520.2.14 2009/04/29 18:32:15 drumm Exp $
++// $Id: comment.module,v 1.520.2.15 2010/08/11 20:37:49 drumm Exp $
+ 
+ /**
+  * @file
+@@ -575,7 +575,7 @@
+   global $user;
+ 
+   if ($op == 'edit') {
+-    return ($user->uid && $user->uid == $comment->uid && comment_num_replies($comment->cid) == 0) || user_access('administer comments');
++    return ($user->uid && $user->uid == $comment->uid && comment_num_replies($comment->cid) == 0 && $comment->status == COMMENT_PUBLISHED) || user_access('administer comments');
+   }
+ }
+ 
+diff -Naur drupal-5.22/modules/contact/contact.info drupal-5.23/modules/contact/contact.info
+--- drupal-5.22/modules/contact/contact.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/contact/contact.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/drupal/drupal.info drupal-5.23/modules/drupal/drupal.info
+--- drupal-5.22/modules/drupal/drupal.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/drupal/drupal.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/filter/filter.info drupal-5.23/modules/filter/filter.info
+--- drupal-5.22/modules/filter/filter.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/filter/filter.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/forum/forum.info drupal-5.23/modules/forum/forum.info
+--- drupal-5.22/modules/forum/forum.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/forum/forum.info	2010-08-11 22:46:30.000000000 +0200
+@@ -5,8 +5,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/help/help.info drupal-5.23/modules/help/help.info
+--- drupal-5.22/modules/help/help.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/help/help.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/legacy/legacy.info drupal-5.23/modules/legacy/legacy.info
+--- drupal-5.22/modules/legacy/legacy.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/legacy/legacy.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/locale/locale.info drupal-5.23/modules/locale/locale.info
+--- drupal-5.22/modules/locale/locale.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/locale/locale.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/menu/menu.info drupal-5.23/modules/menu/menu.info
+--- drupal-5.22/modules/menu/menu.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/menu/menu.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/node/node.info drupal-5.23/modules/node/node.info
+--- drupal-5.22/modules/node/node.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/node/node.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/path/path.info drupal-5.23/modules/path/path.info
+--- drupal-5.22/modules/path/path.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/path/path.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/ping/ping.info drupal-5.23/modules/ping/ping.info
+--- drupal-5.22/modules/ping/ping.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/ping/ping.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/poll/poll.info drupal-5.23/modules/poll/poll.info
+--- drupal-5.22/modules/poll/poll.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/poll/poll.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/profile/profile.info drupal-5.23/modules/profile/profile.info
+--- drupal-5.22/modules/profile/profile.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/profile/profile.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/search/search.info drupal-5.23/modules/search/search.info
+--- drupal-5.22/modules/search/search.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/search/search.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/statistics/statistics.info drupal-5.23/modules/statistics/statistics.info
+--- drupal-5.22/modules/statistics/statistics.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/statistics/statistics.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/system/system.info drupal-5.23/modules/system/system.info
+--- drupal-5.22/modules/system/system.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/system/system.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/system/system.module drupal-5.23/modules/system/system.module
+--- drupal-5.22/modules/system/system.module	2010-03-04 01:16:02.000000000 +0100
++++ drupal-5.23/modules/system/system.module	2010-08-11 22:37:49.000000000 +0200
+@@ -1,12 +1,12 @@
+ <?php
+-// $Id: system.module,v 1.440.2.61 2010/03/04 00:16:02 drumm Exp $
++// $Id: system.module,v 1.440.2.63 2010/08/11 20:37:49 drumm Exp $
+ 
+ /**
+  * @file
+  * Configuration system that lets administrators modify the workings of the site.
+  */
+ 
+-define('VERSION', '5.22');
++define('VERSION', '5.23');
+ 
+ /**
+  * Implementation of hook_help().
+diff -Naur drupal-5.22/modules/taxonomy/taxonomy.info drupal-5.23/modules/taxonomy/taxonomy.info
+--- drupal-5.22/modules/taxonomy/taxonomy.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/taxonomy/taxonomy.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/throttle/throttle.info drupal-5.23/modules/throttle/throttle.info
+--- drupal-5.22/modules/throttle/throttle.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/throttle/throttle.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/tracker/tracker.info drupal-5.23/modules/tracker/tracker.info
+--- drupal-5.22/modules/tracker/tracker.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/tracker/tracker.info	2010-08-11 22:46:30.000000000 +0200
+@@ -5,8 +5,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/upload/upload.info drupal-5.23/modules/upload/upload.info
+--- drupal-5.22/modules/upload/upload.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/upload/upload.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/upload/upload.module drupal-5.23/modules/upload/upload.module
+--- drupal-5.22/modules/upload/upload.module	2008-10-08 22:10:26.000000000 +0200
++++ drupal-5.23/modules/upload/upload.module	2010-08-11 22:37:49.000000000 +0200
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: upload.module,v 1.148.2.5 2008/10/08 20:10:26 drumm Exp $
++// $Id: upload.module,v 1.148.2.6 2010/08/11 20:37:49 drumm Exp $
+ 
+ /**
+  * @file
+@@ -259,9 +259,15 @@
+ }
+ 
+ function upload_file_download($file) {
+-  $file = file_create_path($file);
+-  $result = db_query("SELECT f.* FROM {files} f WHERE filepath = '%s'", $file);
+-  if ($file = db_fetch_object($result)) {
++  $filepath = file_create_path($file);
++  $result = db_query("SELECT f.* FROM {files} f WHERE filepath = '%s'", $filepath);
++  while ($file = db_fetch_object($result)) {
++    if ($filepath !== $file->filepath) {
++      // Since some database servers sometimes use a case-insensitive
++      // comparison by default, double check that the filename is an exact
++      // match.
++      continue;
++    }
+     if (user_access('view uploaded files')) {
+       $node = node_load($file->nid);
+       if (node_access('view', $node)) {
+@@ -271,13 +277,8 @@
+           'Content-Length: '. $file->filesize,
+         );
+       }
+-      else {
+-        return -1;
+-      }
+-    }
+-    else {
+-      return -1;
+     }
++    return -1;
+   }
+ }
+ 
+diff -Naur drupal-5.22/modules/user/user.info drupal-5.23/modules/user/user.info
+--- drupal-5.22/modules/user/user.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/user/user.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.22/modules/watchdog/watchdog.info drupal-5.23/modules/watchdog/watchdog.info
+--- drupal-5.22/modules/watchdog/watchdog.info	2010-03-04 01:20:05.000000000 +0100
++++ drupal-5.23/modules/watchdog/watchdog.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2010-03-04
+-version = "5.22"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1267662005"
++datestamp = "1281559590"
+ 

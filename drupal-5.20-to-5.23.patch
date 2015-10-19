@@ -1,0 +1,771 @@
+diff -Naur drupal-5.20/CHANGELOG.txt drupal-5.23/CHANGELOG.txt
+--- drupal-5.20/CHANGELOG.txt	2009-09-16 21:33:40.000000000 +0200
++++ drupal-5.23/CHANGELOG.txt	2010-08-11 22:37:49.000000000 +0200
+@@ -1,4 +1,19 @@
+-// $Id: CHANGELOG.txt,v 1.173.2.44 2009/09/16 19:33:40 drumm Exp $
++// $Id: CHANGELOG.txt,v 1.173.2.50 2010/08/11 20:37:49 drumm Exp $
++
++Drupal 5.23, 2010-08-11
++-----------------------
++- Fixed security issues (File download access bypass, Comment unpublishing
++  bypass), see SA-CORE-2010-002.
++
++Drupal 5.22, 2010-03-03
++-----------------------
++- Fixed security issues (Open redirection, Locale module cross site scripting,
++  Blocked user session regeneration), see SA-CORE-2010-001.
++
++Drupal 5.21, 2009-12-16
++-----------------------
++- Fixed a security issue (Cross site scripting), see SA-CORE-2009-009.
++- Fixed a variety of small bugs.
+ 
+ Drupal 5.20, 2009-09-16
+ -----------------------
+diff -Naur drupal-5.20/includes/common.inc drupal-5.23/includes/common.inc
+--- drupal-5.20/includes/common.inc	2009-09-16 19:29:09.000000000 +0200
++++ drupal-5.23/includes/common.inc	2010-03-04 01:16:02.000000000 +0100
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: common.inc,v 1.611.2.25 2009/09/16 17:29:09 drumm Exp $
++// $Id: common.inc,v 1.611.2.26 2010/03/04 00:16:02 drumm Exp $
+ 
+ /**
+  * @file
+@@ -302,11 +302,22 @@
+  * @see drupal_get_destination()
+  */
+ function drupal_goto($path = '', $query = NULL, $fragment = NULL, $http_response_code = 302) {
++
++  $destination = FALSE;
+   if (isset($_REQUEST['destination'])) {
+-    extract(parse_url(urldecode($_REQUEST['destination'])));
++    $destination = $_REQUEST['destination'];
+   }
+   else if (isset($_REQUEST['edit']['destination'])) {
+-    extract(parse_url(urldecode($_REQUEST['edit']['destination'])));
++    $destination = $_REQUEST['edit']['destination'];
++  }
++
++  if ($destination) {
++    // Do not redirect to an absolute URL originating from user input.
++    $colonpos = strpos($destination, ':');
++    $absolute = ($colonpos !== FALSE && !preg_match('![/?#]!', substr($destination, 0, $colonpos)));
++    if (!$absolute) {
++      extract(parse_url(urldecode($destination)));
++    }
+   }
+ 
+   $url = url($path, $query, $fragment, TRUE);
+diff -Naur drupal-5.20/includes/locale.inc drupal-5.23/includes/locale.inc
+--- drupal-5.20/includes/locale.inc	2007-12-17 02:53:52.000000000 +0100
++++ drupal-5.23/includes/locale.inc	2010-03-04 01:16:02.000000000 +0100
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: locale.inc,v 1.105.2.5 2007/12/17 01:53:52 drumm Exp $
++// $Id: locale.inc,v 1.105.2.6 2010/03/04 00:16:02 drumm Exp $
+ 
+ /**
+  * @file
+@@ -41,6 +41,9 @@
+   $options = array();
+   $form['name'] = array('#tree' => TRUE);
+   foreach ($languages['name'] as $key => $lang) {
++    // Language code should contain no markup, but is emitted
++    // by radio and checkbox options.
++    $key = check_plain($key);
+     $options[$key] = '';
+     $status = db_fetch_object(db_query("SELECT isdefault, enabled FROM {locales_meta} WHERE locale = '%s'", $key));
+     if ($status->enabled) {
+@@ -97,6 +100,14 @@
+   return $output;
+ }
+ 
++function _locale_admin_manage_screen_validate($form_id, $form_values) {
++  foreach ($form_values['name'] as $key => $value) {
++    if (preg_match('/["<>\']/', $value)) {
++      form_set_error('name][' . $key, t('The characters &lt;, &gt;, " and \' are not allowed in the language name in English field.'));
++    }
++  }
++}
++
+ /**
+  * Process locale admin manager form submissions.
+  */
+@@ -184,12 +195,22 @@
+     form_set_error(t('The language %language (%code) already exists.', array('%language' => $form_values['langname'], '%code' => $form_values['langcode'])));
+   }
+ 
++  // If we are adding a non-custom language, check for a valid langcode.
+   if (!isset($form_values['langname'])) {
+     $isocodes = _locale_get_iso639_list();
+     if (!isset($isocodes[$form_values['langcode']])) {
+       form_set_error('langcode', t('Invalid language code.'));
+     }
+   }
++  // Otherwise, check for invlaid characters
++  else {
++    if (preg_match('/["<>\']/', $form_values['langcode'])) {
++      form_set_error('langcode', t('The characters &lt;, &gt;, " and \' are not allowed in the language code field.'));
++    }
++    if (preg_match('/["<>\']/', $form_values['langname'])) {
++      form_set_error('langname', t('The characters &lt;, &gt;, " and \' are not allowed in the language name in English field.'));
++    }
++  }
+ }
+ 
+ /**
+@@ -331,8 +352,14 @@
+ function _locale_string_seek_form() {
+   // Get *all* languages set up
+   $languages = locale_supported_languages(FALSE, TRUE);
+-  asort($languages['name']); unset($languages['name']['en']);
+-  $languages['name'] = array_map('check_plain', $languages['name']);
++  unset($languages['name']['en']);
++  // Sanitize the values to be used in radios.
++  $languages_name = array();
++  foreach ($languages['name'] as $key => $value) {
++    $languages_name[check_plain($key)] = check_plain($value);
++  }
++  $languages['name'] = $languages_name;
++  asort($languages['name']);
+ 
+   // Present edit form preserving previous user settings
+   $query = _locale_string_seek_query();
+diff -Naur drupal-5.20/includes/session.inc drupal-5.23/includes/session.inc
+--- drupal-5.20/includes/session.inc	2008-12-11 01:23:01.000000000 +0100
++++ drupal-5.23/includes/session.inc	2010-03-04 01:16:02.000000000 +0100
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: session.inc,v 1.37.2.7 2008/12/11 00:23:01 drumm Exp $
++// $Id: session.inc,v 1.37.2.8 2010/03/04 00:16:02 drumm Exp $
+ 
+ /**
+  * @file
+@@ -31,8 +31,9 @@
+   // Otherwise, if the session is still active, we have a record of the client's session in the database.
+   $user = db_fetch_object(db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = '%s'", $key));
+ 
+-  // We found the client's session record and they are an authenticated user
+-  if ($user && $user->uid > 0) {
++  // We found the client's session record and they are an authenticated,
++  // active user.
++  if ($user && $user->uid > 0 && $user->status == 1) {
+     // This is done to unserialize the data member of $user
+     $user = drupal_unpack($user);
+ 
+@@ -44,7 +45,8 @@
+       $user->roles[$role->rid] = $role->name;
+     }
+   }
+-  // We didn't find the client's record (session has expired), or they are an anonymous user.
++  // We didn't find the client's record (session has expired), or they are
++  // blocked, or they are an anonymous user.
+   else {
+     $session = isset($user->session) ? $user->session : '';
+     $user = drupal_anonymous_user($session);
+diff -Naur drupal-5.20/modules/aggregator/aggregator.info drupal-5.23/modules/aggregator/aggregator.info
+--- drupal-5.20/modules/aggregator/aggregator.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/aggregator/aggregator.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/block/block.info drupal-5.23/modules/block/block.info
+--- drupal-5.20/modules/block/block.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/block/block.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/blog/blog.info drupal-5.23/modules/blog/blog.info
+--- drupal-5.20/modules/blog/blog.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/blog/blog.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/blogapi/blogapi.info drupal-5.23/modules/blogapi/blogapi.info
+--- drupal-5.20/modules/blogapi/blogapi.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/blogapi/blogapi.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/book/book.info drupal-5.23/modules/book/book.info
+--- drupal-5.20/modules/book/book.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/book/book.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/color/color.info drupal-5.23/modules/color/color.info
+--- drupal-5.20/modules/color/color.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/color/color.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/comment/comment.info drupal-5.23/modules/comment/comment.info
+--- drupal-5.20/modules/comment/comment.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/comment/comment.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/comment/comment.module drupal-5.23/modules/comment/comment.module
+--- drupal-5.20/modules/comment/comment.module	2009-04-29 20:32:15.000000000 +0200
++++ drupal-5.23/modules/comment/comment.module	2010-08-11 22:37:49.000000000 +0200
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: comment.module,v 1.520.2.14 2009/04/29 18:32:15 drumm Exp $
++// $Id: comment.module,v 1.520.2.15 2010/08/11 20:37:49 drumm Exp $
+ 
+ /**
+  * @file
+@@ -575,7 +575,7 @@
+   global $user;
+ 
+   if ($op == 'edit') {
+-    return ($user->uid && $user->uid == $comment->uid && comment_num_replies($comment->cid) == 0) || user_access('administer comments');
++    return ($user->uid && $user->uid == $comment->uid && comment_num_replies($comment->cid) == 0 && $comment->status == COMMENT_PUBLISHED) || user_access('administer comments');
+   }
+ }
+ 
+diff -Naur drupal-5.20/modules/contact/contact.info drupal-5.23/modules/contact/contact.info
+--- drupal-5.20/modules/contact/contact.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/contact/contact.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/contact/contact.module drupal-5.23/modules/contact/contact.module
+--- drupal-5.20/modules/contact/contact.module	2008-09-15 08:19:06.000000000 +0200
++++ drupal-5.23/modules/contact/contact.module	2009-12-16 21:46:31.000000000 +0100
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: contact.module,v 1.74.2.2 2008/09/15 06:19:06 drumm Exp $
++// $Id: contact.module,v 1.74.2.3 2009/12/16 20:46:31 drumm Exp $
+ 
+ /**
+  * @file
+@@ -145,7 +145,7 @@
+   $result = db_query('SELECT cid, category, recipients, selected FROM {contact} ORDER BY weight, category');
+   $rows = array();
+   while ($category = db_fetch_object($result)) {
+-    $rows[] = array($category->category, $category->recipients, ($category->selected ? t('Yes') : t('No')), l(t('edit'), 'admin/build/contact/edit/'. $category->cid), l(t('delete'), 'admin/build/contact/delete/'. $category->cid));
++    $rows[] = array(check_plain($category->category), check_plain($category->recipients), ($category->selected ? t('Yes') : t('No')), l(t('edit'), 'admin/build/contact/edit/'. $category->cid), l(t('delete'), 'admin/build/contact/delete/'. $category->cid));
+   }
+   $header = array(t('Category'), t('Recipients'), t('Selected'), array('data' => t('Operations'), 'colspan' => 2));
+ 
+@@ -549,4 +549,3 @@
+   // Jump to home page rather than back to contact page to avoid contradictory messages if flood control has been activated.
+   return '';
+ }
+-
+diff -Naur drupal-5.20/modules/drupal/drupal.info drupal-5.23/modules/drupal/drupal.info
+--- drupal-5.20/modules/drupal/drupal.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/drupal/drupal.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/filter/filter.info drupal-5.23/modules/filter/filter.info
+--- drupal-5.20/modules/filter/filter.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/filter/filter.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/forum/forum.info drupal-5.23/modules/forum/forum.info
+--- drupal-5.20/modules/forum/forum.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/forum/forum.info	2010-08-11 22:46:30.000000000 +0200
+@@ -5,8 +5,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/help/help.info drupal-5.23/modules/help/help.info
+--- drupal-5.20/modules/help/help.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/help/help.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/legacy/legacy.info drupal-5.23/modules/legacy/legacy.info
+--- drupal-5.20/modules/legacy/legacy.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/legacy/legacy.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/locale/locale.info drupal-5.23/modules/locale/locale.info
+--- drupal-5.20/modules/locale/locale.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/locale/locale.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/locale/locale.install drupal-5.23/modules/locale/locale.install
+--- drupal-5.20/modules/locale/locale.install	2006-11-14 07:20:40.000000000 +0100
++++ drupal-5.23/modules/locale/locale.install	2010-03-04 01:16:02.000000000 +0100
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: locale.install,v 1.7 2006/11/14 06:20:40 drumm Exp $
++// $Id: locale.install,v 1.7.2.1 2010/03/04 00:16:02 drumm Exp $
+ 
+ /**
+  * Implementation of hook_install().
+@@ -85,3 +85,23 @@
+   db_query('DROP TABLE {locales_source}');
+   db_query('DROP TABLE {locales_target}');
+ }
++
++/**
++ * Neutralize unsafe language names in the database.
++ */
++function locale_update_1() {
++  $ret = array();
++  $matches = db_result(db_query("SELECT 1 FROM {locales_meta} WHERE name LIKE '%<%' OR name LIKE '%>%'"));
++  if ($matches) {
++    $ret[] = update_sql("UPDATE {locales_meta} SET name = REPLACE(name, '<', '')");
++    $ret[] = update_sql("UPDATE {locales_meta} SET name = REPLACE(name, '>', '')");
++    drupal_set_message('The language name in English of all the existing custom languages of your site have been sanitized for security purposes. Visit the <a href="'. url('admin/settings/language') .'">Languages</a> page to check these and fix them if necessary.', 'warning');
++  }
++  // Check if some langcode values contain potentially dangerous characters and
++  // warn the user if so. These are not fixed since they are referenced in other
++  // tables (e.g. {node}).
++  if (db_result(db_query("SELECT 1 FROM {locales_meta} WHERE locale LIKE '%<%' OR locale LIKE '%>%' OR locale LIKE '%\"%' OR locale LIKE '%\\\\\%'"))) {
++    drupal_set_message('Some of your custom language code values contain invalid characters. You should examine the <a href="'. url('admin/settings/language') .'">Languages</a> page. These must be fixed manually.', 'error');
++  }
++  return $ret;
++}
+diff -Naur drupal-5.20/modules/locale/locale.module drupal-5.23/modules/locale/locale.module
+--- drupal-5.20/modules/locale/locale.module	2008-07-09 23:48:42.000000000 +0200
++++ drupal-5.23/modules/locale/locale.module	2010-03-04 01:16:02.000000000 +0100
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: locale.module,v 1.155.2.1 2008/07/09 21:48:42 drumm Exp $
++// $Id: locale.module,v 1.155.2.2 2010/03/04 00:16:02 drumm Exp $
+ 
+ /**
+  * @file
+@@ -137,15 +137,17 @@
+     if ($user->language == '') {
+       $user->language = key($languages['name']);
+     }
+-    $languages['name'] = array_map('check_plain', array_map('t', $languages['name']));
++    foreach (array_map('t', $languages['name']) as $key => $value) {
++      $languages_name[check_plain($key)] = check_plain($value);
++    }
+     $form['locale'] = array('#type' => 'fieldset',
+       '#title' => t('Interface language settings'),
+       '#weight' => 1,
+     );
+     $form['locale']['language'] = array('#type' => 'radios',
+       '#title' => t('Language'),
+-      '#default_value' => $user->language,
+-      '#options' => $languages['name'],
++      '#default_value' => check_plain($user->language),
++      '#options' => $languages_name,
+       '#description' => t('Selecting a different locale will change the interface language of the site.'),
+     );
+     return $form;
+diff -Naur drupal-5.20/modules/menu/menu.info drupal-5.23/modules/menu/menu.info
+--- drupal-5.20/modules/menu/menu.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/menu/menu.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/node/node.info drupal-5.23/modules/node/node.info
+--- drupal-5.20/modules/node/node.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/node/node.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/path/path.info drupal-5.23/modules/path/path.info
+--- drupal-5.20/modules/path/path.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/path/path.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/ping/ping.info drupal-5.23/modules/ping/ping.info
+--- drupal-5.20/modules/ping/ping.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/ping/ping.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/poll/poll.info drupal-5.23/modules/poll/poll.info
+--- drupal-5.20/modules/poll/poll.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/poll/poll.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/profile/profile.info drupal-5.23/modules/profile/profile.info
+--- drupal-5.20/modules/profile/profile.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/profile/profile.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/search/search.info drupal-5.23/modules/search/search.info
+--- drupal-5.20/modules/search/search.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/search/search.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/statistics/statistics.info drupal-5.23/modules/statistics/statistics.info
+--- drupal-5.20/modules/statistics/statistics.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/statistics/statistics.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/system/system.info drupal-5.23/modules/system/system.info
+--- drupal-5.20/modules/system/system.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/system/system.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/system/system.module drupal-5.23/modules/system/system.module
+--- drupal-5.20/modules/system/system.module	2009-09-16 21:33:40.000000000 +0200
++++ drupal-5.23/modules/system/system.module	2010-08-11 22:37:49.000000000 +0200
+@@ -1,12 +1,12 @@
+ <?php
+-// $Id: system.module,v 1.440.2.57 2009/09/16 19:33:40 drumm Exp $
++// $Id: system.module,v 1.440.2.63 2010/08/11 20:37:49 drumm Exp $
+ 
+ /**
+  * @file
+  * Configuration system that lets administrators modify the workings of the site.
+  */
+ 
+-define('VERSION', '5.20');
++define('VERSION', '5.23');
+ 
+ /**
+  * Implementation of hook_help().
+diff -Naur drupal-5.20/modules/taxonomy/taxonomy.info drupal-5.23/modules/taxonomy/taxonomy.info
+--- drupal-5.20/modules/taxonomy/taxonomy.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/taxonomy/taxonomy.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/throttle/throttle.info drupal-5.23/modules/throttle/throttle.info
+--- drupal-5.20/modules/throttle/throttle.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/throttle/throttle.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/tracker/tracker.info drupal-5.23/modules/tracker/tracker.info
+--- drupal-5.20/modules/tracker/tracker.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/tracker/tracker.info	2010-08-11 22:46:30.000000000 +0200
+@@ -5,8 +5,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/upload/upload.info drupal-5.23/modules/upload/upload.info
+--- drupal-5.20/modules/upload/upload.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/upload/upload.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/upload/upload.module drupal-5.23/modules/upload/upload.module
+--- drupal-5.20/modules/upload/upload.module	2008-10-08 22:10:26.000000000 +0200
++++ drupal-5.23/modules/upload/upload.module	2010-08-11 22:37:49.000000000 +0200
+@@ -1,5 +1,5 @@
+ <?php
+-// $Id: upload.module,v 1.148.2.5 2008/10/08 20:10:26 drumm Exp $
++// $Id: upload.module,v 1.148.2.6 2010/08/11 20:37:49 drumm Exp $
+ 
+ /**
+  * @file
+@@ -259,9 +259,15 @@
+ }
+ 
+ function upload_file_download($file) {
+-  $file = file_create_path($file);
+-  $result = db_query("SELECT f.* FROM {files} f WHERE filepath = '%s'", $file);
+-  if ($file = db_fetch_object($result)) {
++  $filepath = file_create_path($file);
++  $result = db_query("SELECT f.* FROM {files} f WHERE filepath = '%s'", $filepath);
++  while ($file = db_fetch_object($result)) {
++    if ($filepath !== $file->filepath) {
++      // Since some database servers sometimes use a case-insensitive
++      // comparison by default, double check that the filename is an exact
++      // match.
++      continue;
++    }
+     if (user_access('view uploaded files')) {
+       $node = node_load($file->nid);
+       if (node_access('view', $node)) {
+@@ -271,13 +277,8 @@
+           'Content-Length: '. $file->filesize,
+         );
+       }
+-      else {
+-        return -1;
+-      }
+-    }
+-    else {
+-      return -1;
+     }
++    return -1;
+   }
+ }
+ 
+diff -Naur drupal-5.20/modules/user/user.info drupal-5.23/modules/user/user.info
+--- drupal-5.20/modules/user/user.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/user/user.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
+diff -Naur drupal-5.20/modules/watchdog/watchdog.info drupal-5.23/modules/watchdog/watchdog.info
+--- drupal-5.20/modules/watchdog/watchdog.info	2009-09-16 21:40:23.000000000 +0200
++++ drupal-5.23/modules/watchdog/watchdog.info	2010-08-11 22:46:30.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - required
+ version = VERSION
+ 
+-; Information added by drupal.org packaging script on 2009-09-16
+-version = "5.20"
++; Information added by drupal.org packaging script on 2010-08-11
++version = "5.23"
+ project = "drupal"
+-datestamp = "1253130023"
++datestamp = "1281559590"
+ 
