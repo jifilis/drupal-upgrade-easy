@@ -1,0 +1,766 @@
+diff -Naur drupal-6.36/CHANGELOG.txt drupal-6.37/CHANGELOG.txt
+--- drupal-6.36/CHANGELOG.txt	2015-06-17 20:33:35.000000000 +0200
++++ drupal-6.37/CHANGELOG.txt	2015-08-19 23:15:49.000000000 +0200
+@@ -1,4 +1,8 @@
+ 
++Drupal 6.37, 2015-08-19
++-----------------------
++- Fixed security issues (multiple vulnerabilities). See SA-CORE-2015-003.
++
+ Drupal 6.36, 2015-06-17
+ -----------------------
+ - Fixed security issues (OpenID impersonation). See SA-CORE-2015-002.
+diff -Naur drupal-6.36/includes/form.inc drupal-6.37/includes/form.inc
+--- drupal-6.36/includes/form.inc	2015-06-17 20:33:35.000000000 +0200
++++ drupal-6.37/includes/form.inc	2015-08-19 23:15:49.000000000 +0200
+@@ -626,7 +626,7 @@
+   // If the session token was set by drupal_prepare_form(), ensure that it
+   // matches the current user's session.
+   if (isset($form['#token'])) {
+-    if (!drupal_valid_token($form_state['values']['form_token'], $form['#token'])) {
++    if (!drupal_valid_token($form_state['values']['form_token'], $form['#token']) || !empty($form_state['invalid_token'])) {
+       // Setting this error will cause the form to fail validation.
+       form_set_error('form_token', t('Validation error, please try again. If this error persists, please contact the site administrator.'));
+ 
+@@ -926,12 +926,28 @@
+     $form += $info;
+   }
+ 
++  // Special handling if we're on the top level form element.
+   if (isset($form['#type']) && $form['#type'] == 'form') {
+     $cache = NULL;
+     $complete_form = $form;
+     if (!empty($form['#programmed'])) {
+       $form_state['submitted'] = TRUE;
+     }
++    else {
++      // If the session token was set by drupal_prepare_form(), ensure that it
++      // matches the current user's session before processing input.
++      if (isset($form['#token']) && isset($form['#post']) && (isset($form['#post']['form_id']) && $form['#post']['form_id'] == $form_id)) {
++        $form_state['invalid_token'] = FALSE;
++        if (empty($form['#post']['form_token']) || !drupal_valid_token($form['#post']['form_token'], $form['#token'])) {
++          // Setting this error will cause the form to fail validation.
++          form_set_error('form_token', t('Validation error, please try again. If this error persists, please contact the site administrator.'));
++          // This value is checked in _form_builder_handle_input_element().
++          $form_state['invalid_token'] = TRUE;
++          // Make sure file uploads do not get processed.
++          $_FILES = array();
++        }
++      }
++    }
+   }
+ 
+   if (isset($form['#input']) && $form['#input']) {
+@@ -1019,6 +1035,15 @@
+  * attached to a specific element.
+  */
+ function _form_builder_handle_input_element($form_id, &$form, &$form_state, $complete_form) {
++  static $safe_core_value_callbacks = array(
++    'form_type_token_value',
++    'form_type_textfield_value',
++    'form_type_checkbox_value',
++    'form_type_checkboxes_value',
++    'form_type_password_confirm_value',
++    'form_type_select_value'
++  );
++
+   if (!isset($form['#name'])) {
+     $name = array_shift($form['#parents']);
+     $form['#name'] = $name;
+@@ -1051,7 +1076,14 @@
+       if (!$form['#programmed'] || isset($edit)) {
+         // Call #type_value to set the form value;
+         if (function_exists($function)) {
+-          $form['#value'] = $function($form, $edit);
++          // Skip all value callbacks except safe ones like text if the CSRF
++          // token was invalid.
++          if (empty($form_state['invalid_token']) || in_array($function, $safe_core_value_callbacks)) {
++            $form['#value'] = $function($form, $edit);
++          }
++          else {
++            $edit = NULL;
++          }
+         }
+         if (!isset($form['#value']) && isset($edit)) {
+           $form['#value'] = $edit;
+@@ -2079,6 +2111,29 @@
+ }
+ 
+ /**
++ * Process function to prepare autocomplete data.
++ *
++ * @param $element
++ *   A textfield or other element with a #autocomplete_path.
++ *
++ * @return array
++ *   The processed form element.
++ */
++function form_process_autocomplete($element) {
++  $element['#autocomplete_input'] = array();
++  if ($element['#autocomplete_path'] && menu_valid_path(array('link_path' => $element['#autocomplete_path']))) {
++    $element['#autocomplete_input']['#id'] = $element['#id'] .'-autocomplete';
++    // Force autocomplete to use non-clean URLs since this protects against the
++    // browser interpreting the path plus search string as an actual file.
++    $current_clean_url = isset($GLOBALS['conf']['clean_url']) ? $GLOBALS['conf']['clean_url'] : NULL;
++    $GLOBALS['conf']['clean_url'] = 0;
++    $element['#autocomplete_input']['#url_value'] = check_url(url($element['#autocomplete_path'], array('absolute' => TRUE)));
++    $GLOBALS['conf']['clean_url'] = $current_clean_url;
++  }
++  return $element;
++}
++
++/**
+  * Format a textfield.
+  *
+  * @param $element
+@@ -2096,10 +2151,10 @@
+   $extra = '';
+   $output = '';
+ 
+-  if ($element['#autocomplete_path'] && menu_valid_path(array('link_path' => $element['#autocomplete_path']))) {
++  if ($element['#autocomplete_path'] && !empty($element['#autocomplete_input'])) {
+     drupal_add_js('misc/autocomplete.js');
+     $class[] = 'form-autocomplete';
+-    $extra =  '<input class="autocomplete" type="hidden" id="'. $element['#id'] .'-autocomplete" value="'. check_url(url($element['#autocomplete_path'], array('absolute' => TRUE))) .'" disabled="disabled" />';
++    $extra =  '<input class="autocomplete" type="hidden" id="'. $element['#autocomplete_input']['#id'] .'" value="'. $element['#autocomplete_input']['#url_value'] .'" disabled="disabled" />';
+   }
+   _form_set_class($element, $class);
+ 
+diff -Naur drupal-6.36/includes/menu.inc drupal-6.37/includes/menu.inc
+--- drupal-6.36/includes/menu.inc	2015-06-17 20:33:35.000000000 +0200
++++ drupal-6.37/includes/menu.inc	2015-08-19 23:15:49.000000000 +0200
+@@ -1002,7 +1002,7 @@
+  */
+ function menu_tree_check_access(&$tree, $node_links = array()) {
+ 
+-  if ($node_links) {
++  if ($node_links && (user_access('access content') || user_access('bypass node access'))) {
+     // Use db_rewrite_sql to evaluate view access without loading each full node.
+     $nids = array_keys($node_links);
+     $placeholders = '%d'. str_repeat(', %d', count($nids) - 1);
+diff -Naur drupal-6.36/misc/autocomplete.js drupal-6.37/misc/autocomplete.js
+--- drupal-6.36/misc/autocomplete.js	2015-06-17 20:33:35.000000000 +0200
++++ drupal-6.37/misc/autocomplete.js	2015-08-19 23:15:49.000000000 +0200
+@@ -253,6 +253,16 @@
+   var db = this;
+   this.searchString = searchString;
+ 
++  // See if this string needs to be searched for anyway. The pattern ../ is
++  // stripped since it may be misinterpreted by the browser.
++  searchString = searchString.replace(/^\s+|\.{2,}\/|\s+$/g, '');
++  // Skip empty search strings, or search strings ending with a comma, since
++  // that is the separator between search terms.
++  if (searchString.length <= 0 ||
++    searchString.charAt(searchString.length - 1) == ',') {
++    return;
++  }
++
+   // See if this key has been searched for before
+   if (this.cache[searchString]) {
+     return this.owner.found(this.cache[searchString]);
+diff -Naur drupal-6.36/modules/aggregator/aggregator.info drupal-6.37/modules/aggregator/aggregator.info
+--- drupal-6.36/modules/aggregator/aggregator.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/aggregator/aggregator.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/block/block.info drupal-6.37/modules/block/block.info
+--- drupal-6.36/modules/block/block.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/block/block.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/blog/blog.info drupal-6.37/modules/blog/blog.info
+--- drupal-6.36/modules/blog/blog.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/blog/blog.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/blogapi/blogapi.info drupal-6.37/modules/blogapi/blogapi.info
+--- drupal-6.36/modules/blogapi/blogapi.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/blogapi/blogapi.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/book/book.info drupal-6.37/modules/book/book.info
+--- drupal-6.36/modules/book/book.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/book/book.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/color/color.info drupal-6.37/modules/color/color.info
+--- drupal-6.36/modules/color/color.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/color/color.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/comment/comment.info drupal-6.37/modules/comment/comment.info
+--- drupal-6.36/modules/comment/comment.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/comment/comment.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/contact/contact.info drupal-6.37/modules/contact/contact.info
+--- drupal-6.36/modules/contact/contact.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/contact/contact.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/dblog/dblog.info drupal-6.37/modules/dblog/dblog.info
+--- drupal-6.36/modules/dblog/dblog.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/dblog/dblog.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/filter/filter.info drupal-6.37/modules/filter/filter.info
+--- drupal-6.36/modules/filter/filter.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/filter/filter.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/forum/forum.info drupal-6.37/modules/forum/forum.info
+--- drupal-6.36/modules/forum/forum.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/forum/forum.info	2015-08-19 23:36:00.000000000 +0200
+@@ -6,8 +6,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/help/help.info drupal-6.37/modules/help/help.info
+--- drupal-6.36/modules/help/help.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/help/help.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/locale/locale.info drupal-6.37/modules/locale/locale.info
+--- drupal-6.36/modules/locale/locale.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/locale/locale.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/menu/menu.info drupal-6.37/modules/menu/menu.info
+--- drupal-6.36/modules/menu/menu.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/menu/menu.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/node/node.info drupal-6.37/modules/node/node.info
+--- drupal-6.36/modules/node/node.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/node/node.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/openid/openid.info drupal-6.37/modules/openid/openid.info
+--- drupal-6.36/modules/openid/openid.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/openid/openid.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/path/path.info drupal-6.37/modules/path/path.info
+--- drupal-6.36/modules/path/path.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/path/path.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/php/php.info drupal-6.37/modules/php/php.info
+--- drupal-6.36/modules/php/php.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/php/php.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/ping/ping.info drupal-6.37/modules/ping/ping.info
+--- drupal-6.36/modules/ping/ping.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/ping/ping.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/poll/poll.info drupal-6.37/modules/poll/poll.info
+--- drupal-6.36/modules/poll/poll.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/poll/poll.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/profile/profile.info drupal-6.37/modules/profile/profile.info
+--- drupal-6.36/modules/profile/profile.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/profile/profile.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/search/search.info drupal-6.37/modules/search/search.info
+--- drupal-6.36/modules/search/search.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/search/search.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/statistics/statistics.info drupal-6.37/modules/statistics/statistics.info
+--- drupal-6.36/modules/statistics/statistics.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/statistics/statistics.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/syslog/syslog.info drupal-6.37/modules/syslog/syslog.info
+--- drupal-6.36/modules/syslog/syslog.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/syslog/syslog.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/system/system.info drupal-6.37/modules/system/system.info
+--- drupal-6.36/modules/system/system.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/system/system.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/system/system.module drupal-6.37/modules/system/system.module
+--- drupal-6.36/modules/system/system.module	2015-06-17 20:33:35.000000000 +0200
++++ drupal-6.37/modules/system/system.module	2015-08-19 23:15:49.000000000 +0200
+@@ -8,7 +8,7 @@
+ /**
+  * The current system version.
+  */
+-define('VERSION', '6.36');
++define('VERSION', '6.37');
+ 
+ /**
+  * Core API compatibility.
+@@ -169,7 +169,7 @@
+   $type['submit'] = array('#input' => TRUE, '#name' => 'op', '#button_type' => 'submit', '#executes_submit_callback' => TRUE, '#process' => array('form_expand_ahah'));
+   $type['button'] = array('#input' => TRUE, '#name' => 'op', '#button_type' => 'submit', '#executes_submit_callback' => FALSE, '#process' => array('form_expand_ahah'));
+   $type['image_button'] = array('#input' => TRUE, '#button_type' => 'submit', '#executes_submit_callback' => TRUE, '#process' => array('form_expand_ahah'), '#return_value' => TRUE, '#has_garbage_value' => TRUE, '#src' => NULL);
+-  $type['textfield'] = array('#input' => TRUE, '#size' => 60, '#maxlength' => 128, '#autocomplete_path' => FALSE, '#process' => array('form_expand_ahah'));
++  $type['textfield'] = array('#input' => TRUE, '#size' => 60, '#maxlength' => 128, '#autocomplete_path' => FALSE, '#process' => array('form_process_autocomplete', 'form_expand_ahah'));
+   $type['password'] = array('#input' => TRUE, '#size' => 60, '#maxlength' => 128, '#process' => array('form_expand_ahah'));
+   $type['password_confirm'] = array('#input' => TRUE, '#process' => array('expand_password_confirm'));
+   $type['textarea'] = array('#input' => TRUE, '#cols' => 60, '#rows' => 5, '#resizable' => TRUE, '#process' => array('form_expand_ahah'));
+diff -Naur drupal-6.36/modules/taxonomy/taxonomy.info drupal-6.37/modules/taxonomy/taxonomy.info
+--- drupal-6.36/modules/taxonomy/taxonomy.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/taxonomy/taxonomy.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/throttle/throttle.info drupal-6.37/modules/throttle/throttle.info
+--- drupal-6.36/modules/throttle/throttle.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/throttle/throttle.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/tracker/tracker.info drupal-6.37/modules/tracker/tracker.info
+--- drupal-6.36/modules/tracker/tracker.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/tracker/tracker.info	2015-08-19 23:36:00.000000000 +0200
+@@ -5,8 +5,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/translation/translation.info drupal-6.37/modules/translation/translation.info
+--- drupal-6.36/modules/translation/translation.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/translation/translation.info	2015-08-19 23:36:00.000000000 +0200
+@@ -5,8 +5,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/trigger/trigger.info drupal-6.37/modules/trigger/trigger.info
+--- drupal-6.36/modules/trigger/trigger.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/trigger/trigger.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/update/update.info drupal-6.37/modules/update/update.info
+--- drupal-6.36/modules/update/update.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/update/update.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ package = Core - optional
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/upload/upload.info drupal-6.37/modules/upload/upload.info
+--- drupal-6.36/modules/upload/upload.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/upload/upload.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/modules/user/user.info drupal-6.37/modules/user/user.info
+--- drupal-6.36/modules/user/user.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/modules/user/user.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/themes/bluemarine/bluemarine.info drupal-6.37/themes/bluemarine/bluemarine.info
+--- drupal-6.36/themes/bluemarine/bluemarine.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/themes/bluemarine/bluemarine.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ core = 6.x
+ engine = phptemplate
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/themes/chameleon/chameleon.info drupal-6.37/themes/chameleon/chameleon.info
+--- drupal-6.36/themes/chameleon/chameleon.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/themes/chameleon/chameleon.info	2015-08-19 23:36:00.000000000 +0200
+@@ -11,8 +11,8 @@
+ version = VERSION
+ core = 6.x
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/themes/chameleon/marvin/marvin.info drupal-6.37/themes/chameleon/marvin/marvin.info
+--- drupal-6.36/themes/chameleon/marvin/marvin.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/themes/chameleon/marvin/marvin.info	2015-08-19 23:36:00.000000000 +0200
+@@ -6,8 +6,8 @@
+ core = 6.x
+ base theme = chameleon
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/themes/garland/garland.info drupal-6.37/themes/garland/garland.info
+--- drupal-6.36/themes/garland/garland.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/themes/garland/garland.info	2015-08-19 23:36:00.000000000 +0200
+@@ -6,8 +6,8 @@
+ stylesheets[all][] = style.css
+ stylesheets[print][] = print.css
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/themes/garland/minnelli/minnelli.info drupal-6.37/themes/garland/minnelli/minnelli.info
+--- drupal-6.36/themes/garland/minnelli/minnelli.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/themes/garland/minnelli/minnelli.info	2015-08-19 23:35:59.000000000 +0200
+@@ -5,8 +5,8 @@
+ base theme = garland
+ stylesheets[all][] = minnelli.css
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
+diff -Naur drupal-6.36/themes/pushbutton/pushbutton.info drupal-6.37/themes/pushbutton/pushbutton.info
+--- drupal-6.36/themes/pushbutton/pushbutton.info	2015-06-17 20:54:12.000000000 +0200
++++ drupal-6.37/themes/pushbutton/pushbutton.info	2015-08-19 23:36:00.000000000 +0200
+@@ -4,8 +4,8 @@
+ core = 6.x
+ engine = phptemplate
+ 
+-; Information added by Drupal.org packaging script on 2015-06-17
+-version = "6.36"
++; Information added by Drupal.org packaging script on 2015-08-19
++version = "6.37"
+ project = "drupal"
+-datestamp = "1434567252"
++datestamp = "1440020160"
+ 
