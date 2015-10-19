@@ -3,6 +3,15 @@ Drupal upgrade the easy way - More Information @ https://fuerstnet.de/en/drupal-
 
 ---
 
+## Upgrade major releases of Drupal
+
+**Experimental**
+
+Below are patch files to upgrade major releases of Drupal. Please try with caution.
+
+---
+
+
 ### **2015-10-15**: Upgraded patch files to Drupal 7.40. 
 Take care: `.htaccess` and `sites/default/default.settings.php` got changes. Make sure you have a backup of your `.htaccess` before applying the patch. If you modified your `.htaccess` before the patch may not apply. In this case rename your `.htaccess` to `.htaccess-mine` and apply the patch. It will ask you which file to patch, just press ENTER. Now it asks if you want to skip this patch. Enter "y" and press ENTER. Rename `.htaccess-mine` back to `.htaccess` and apply the changes to `.htaccess` as described in Release notes for 7.40). Also have a look there what did change in the `settings.php`.
 
@@ -47,4 +56,3 @@ If the patch process gets interrupted and leaves a mix of patched and unpatched 
 You may savely remove reject files created during that process:
 
 * `find . -name "*.rej" | xargs rm`
-* 
